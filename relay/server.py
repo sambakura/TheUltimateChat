@@ -19,7 +19,7 @@ import websockets
 
 from .buffer import init_db, store_event, get_events_since, purge_expired
 from .crypto import verify_event
-from .protocol import validate_event, get_channel
+from .protocol import validate_event, get_channel, p_tag_pubkey, inbox_key, Kind
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,17 +79,25 @@ async def _handle_event(ws, event: dict) -> None:
         await _send(ws, ["OK", event["id"], False, reason])
         return
 
-    channel = get_channel(event)
-    await store_event(event, channel)
+    # Whispers route to recipient's inbox; all other events route by channel tag
+    if event["kind"] == Kind.WHISPER:
+        recipient = p_tag_pubkey(event)
+        if not recipient:
+            await _send(ws, ["OK", event["id"], False, "whisper requires p-tag"])
+            return
+        routing_channel = inbox_key(recipient)
+    else:
+        routing_channel = get_channel(event)
 
+    await store_event(event, routing_channel)
     await _send(ws, ["OK", event["id"], True, ""])
 
-    if channel and channel in _channel_subs:
-        for sub_ws, sub_id in list(_channel_subs[channel]):
+    if routing_channel and routing_channel in _channel_subs:
+        for sub_ws, sub_id in list(_channel_subs[routing_channel]):
             if sub_ws is not ws:
                 await _send(sub_ws, ["EVENT", sub_id, event])
 
-    log.info("EVENT kind=%d channel=%s from=%s...", event["kind"], channel, event["pubkey"][:8])
+    log.info("EVENT kind=%d route=%s from=%s...", event["kind"], routing_channel, event["pubkey"][:8])
 
 
 async def _handle_req(ws, sub_id: str, fil: dict) -> None:

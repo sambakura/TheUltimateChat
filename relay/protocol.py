@@ -82,3 +82,16 @@ def channel_from_tags(tags: list) -> str | None:
 
 def get_channel(event: dict) -> str | None:
     return channel_from_tags(event.get("tags", []))
+
+
+def p_tag_pubkey(event: dict) -> str | None:
+    """Extract recipient pubkey from p-tag (used for DM routing)."""
+    for tag in event.get("tags", []):
+        if isinstance(tag, list) and len(tag) >= 2 and tag[0] == "p":
+            return tag[1]
+    return None
+
+
+def inbox_key(pubkey: str) -> str:
+    """Relay channel key for a user's DM inbox."""
+    return f"dm:{pubkey}"
